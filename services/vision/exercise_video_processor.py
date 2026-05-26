@@ -1,12 +1,11 @@
-import os
+
 import cv2
 import av
 import numpy as np
 import mediapipe as mp
 import threading
 from streamlit_webrtc import VideoProcessorBase
-from mediapipe.tasks import python
-from mediapipe.tasks.python import vision
+
 from detectors.squat import SquatDetector
 from detectors.pushup import PushUpDetector
 from detectors.biceps_curl import BicepsCurlDetector
@@ -21,19 +20,14 @@ class VideoProcessorClass(VideoProcessorBase):
         self._latest_metrics = None
         self._exercise_type = "Squats"
 
-        model_path = os.path.join(os.getcwd(), "ml_models", "pose_landmarker_full.task")
-        base_option = python.BaseOptions(model_asset_path=model_path)
-
-        options = vision.PoseLandmarkerOptions(
-            base_options=base_option,
-            running_mode=vision.RunningMode.VIDEO,
-            min_pose_detection_confidence=0.7,
-            min_pose_presence_confidence=0.7,
-            min_tracking_confidence=0.7,
-            output_segmentation_masks=False
+        self._pose = mp.solutions.pose.Pose(
+            static_image_mode=False,
+            model_complexity=1,
+            smooth_landmarks=True,
+            enable_segmentation=False,
+            min_detection_confidence=0.7,
+            min_tracking_confidence=0.7
         )
-
-        self._landmarker = vision.PoseLandmarker.create_from_options(options)
 
         self._detectors = {
             "Squats": SquatDetector(),
@@ -43,7 +37,7 @@ class VideoProcessorClass(VideoProcessorBase):
             "Lunges": LungesDetector(),
         }
 
-        self._frame_timestamps_ms = 0
+       
     
     def set_latest_metrics(self, metrics):
         with self._lock:
@@ -194,16 +188,12 @@ class VideoProcessorClass(VideoProcessorBase):
             dtype=np.uint8
         )
 
-        mp_image = mp.Image(
-            image_format=mp.ImageFormat.SRGB,
-            data=cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        )
+        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        self._frame_timestamps_ms += 30
-        result = self._landmarker.detect_for_video(mp_image, self._frame_timestamps_ms)
+        result = self._pose.process(rgb_image)
 
         if result.pose_landmarks:
-            landmarks = result.pose_landmarks[0]
+            landmarks = result.pose_landmarks.landmark
 
             self._draw_skeleton(image, landmarks)
 
